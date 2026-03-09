@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Intelligent Traffic System</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0f1117; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; }
+  header { background: #1a1d27; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a2d3e; }
+  header h1 { font-size: 1.3rem; color: #fff; }
+  .live-badge { background: #555; color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
+  .live-badge.on { background: #00c853; color: #000; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .container { display: grid; grid-template-columns: 280px 1fr; gap: 16px; padding: 16px; height: calc(100vh - 60px); }
+  .sidebar { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .main { display: grid; grid-template-rows: 1fr 200px; gap: 12px; }
+  .card { background: #1a1d27; border-radius: 10px; padding: 16px; border: 1px solid #2a2d3e; }
+  .card h3 { font-size: 0.78rem; color: #888; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-box { background: #0f1117; border-radius: 8px; padding: 12px; text-align: center; }
+  .stat-box .val { font-size: 1.8rem; font-weight: bold; color: #4fc3f7; }
+  .stat-box .lbl { font-size: 0.7rem; color: #666; margin-top: 4px; }
+  .v-red .val { color: #ff5252; }
+  .v-green .val { color: #69f0ae; }
+  .v-yellow .val { color: #ffd740; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab { flex: 1; padding: 8px; border: 1px solid #2a2d3e; background: #0f1117; color: #888; border-radius: 6px; cursor: pointer; font-size: 0.82rem; text-align: center; transition: all 0.2s; }
+  .tab.active { background: #4fc3f7; color: #000; border-color: #4fc3f7; font-weight: bold; }
+  .upload-zone { border: 2px dashed #2a2d3e; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; color: #555; font-size: 0.82rem; }
+  .upload-zone:hover, .upload-zone.drag { border-color: #4fc3f7; color: #4fc3f7; background: rgba(79,195,247,0.05); }
+  .upload-zone .icon { font-size: 2rem; margin-bottom: 6px; }
+  .upload-zone.done { border-color: #00c853; color: #00c853; background: rgba(0,200,83,0.05); }
+  #fileInput { display: none; }
+  .progress-bar { width: 100%; height: 4px; background: #2a2d3e; border-radius: 4px; margin-top: 8px; display: none; }
+  .progress-fill { height: 100%; background: #4fc3f7; border-radius: 4px; width: 0%; transition: width 0.3s; }
+  input[type=text] { width: 100%; background: #0f1117; border: 1px solid #2a2d3e; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+  .btn { padding: 9px 0; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: bold; flex: 1; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.85; }
+  .btn-green { background: #00c853; color: #000; }
+  .btn-red { background: #ff5252; color: #fff; }
+  .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #1f2235; font-size: 0.83rem; }
+  .toggle { position: relative; width: 36px; height: 20px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #333; border-radius: 20px; cursor: pointer; transition: 0.3s; }
+  .slider:before { content:''; position:absolute; width:14px; height:14px; left:3px; top:3px; background:#fff; border-radius:50%; transition:0.3s; }
+  input:checked + .slider { background: #00c853; }
+  input:checked + .slider:before { transform: translateX(16px); }
+  .violation-item { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid #1f2235; font-size: 0.8rem; }
+  .vbadge { padding: 2px 7px; border-radius: 4px; font-size: 0.7rem; white-space: nowrap; background: #ff5252; color: #fff; }
+  .vbadge.wrong { background: #ff6d00; }
+  .vtime { color: #555; font-size: 0.7rem; margin-left: auto; }
+  .violations-list { max-height: 180px; overflow-y: auto; }
+  .video-wrapper { position: relative; background: #000; border-radius: 10px; overflow: hidden; border: 1px solid #2a2d3e; }
+  #videoFeed { width: 100%; height: 100%; object-fit: contain; }
+  .no-signal { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #333; gap: 8px; }
+  .no-signal .icon { font-size: 3rem; }
+  .bottom-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚗 Intelligent Traffic System</h1>
+  <span class="live-badge" id="liveBadge">⏸ OFFLINE</span>
+</header>
+<div class="container">
+  <div class="sidebar">
+    <div class="card">
+      <h3>📊 Live Stats</h3>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="val" id="statCount">0</div><div class="lbl">Vehicles</div></div>
+        <div class="stat-box v-red"><div class="val" id="statViols">0</div><div class="lbl">Violations</div></div>
+        <div class="stat-box v-green"><div class="val" id="statFree">-</div><div class="lbl">Free Slots</div></div>
+        <div class="stat-box v-yellow"><div class="val" id="statFps">0</div><div class="lbl">FPS</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>⚙️ Source & Controls</h3>
+      <div class="tabs">
+        <div class="tab active" id="tabUpload" onclick="switchTab('upload')">📁 Upload Video</div>
+        <div class="tab" id="tabCamera" onclick="switchTab('camera')">📷 Camera</div>
+      </div>
+      <div id="panelUpload">
+        <div class="upload-zone" id="uploadZone"
+             onclick="document.getElementById('fileInput').click()"
+             ondragover="event.preventDefault();this.classList.add('drag')"
+             ondragleave="this.classList.remove('drag')"
+             ondrop="handleDrop(event)">
+          <div class="icon">📂</div>
+          <div id="uploadText">Click or drag video here</div>
+          <div style="font-size:0.7rem;color:#444;margin-top:4px">MP4, AVI, MOV supported</div>
+        </div>
+        <input type="file" id="fileInput" accept="video/*" onchange="uploadFile(this.files[0])">
+        <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <div id="panelCamera" style="display:none">
+        <input type="text" id="cameraSource" placeholder="0 = webcam  |  rtsp://..." value="0">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-green" onclick="startPipeline()">▶ Start</button>
+        <button class="btn btn-red" onclick="stopPipeline()">■ Stop</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🔧 Modules</h3>
+      <div class="toggle-row">Counter <label class="toggle"><input type="checkbox" checked id="togCounter"><span class="slider"></span></label></div>
+      <div class="toggle-row">Restricted Area <label class="toggle"><input type="checkbox" checked id="togRestricted"><span class="slider"></span></label></div>
+      <div class="toggle-row">Wrong Way <label class="toggle"><input type="checkbox" checked id="togWrongWay"><span class="slider"></span></label></div>
+      <div class="toggle-row">Parking <label class="toggle"><input type="checkbox" checked id="togParking"><span class="slider"></span></label></div>
+    </div>
+    <div class="card">
+      <h3>🚨 Recent Violations</h3>
+      <div class="violations-list" id="violationsList">
+        <div style="color:#444;font-size:0.8rem;text-align:center;padding:16px">No violations yet</div>
+      </div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="video-wrapper">
+      <img id="videoFeed" src="" style="display:none">
+      <div class="no-signal" id="noSignal">
+        <div class="icon">📹</div>
+        <div>Upload a video or start camera</div>
+      </div>
+    </div>
+    <div class="bottom-row">
+      <div class="card">
+        <h3>📈 Vehicle Count (last 8h)</h3>
+        <canvas id="countChart" height="120"></canvas>
+      </div>
+      <div class="card">
+        <h3>🅿️ Parking Overview</h3>
+        <canvas id="parkingChart" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+let ws = null;
+let uploadedPath = null;
+let currentTab = 'upload';
+
+const countChart = new Chart(document.getElementById('countChart').getContext('2d'), {
+  type: 'line',
+  data: { labels: [], datasets: [{ label: 'Vehicles', data: [], borderColor: '#4fc3f7', backgroundColor: 'rgba(79,195,247,0.1)', tension: 0.4, fill: true }] },
+  options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#666', maxTicksLimit: 6 } }, y: { ticks: { color: '#666' }, beginAtZero: true } } }
+});
+
+const parkingChart = new Chart(document.getElementById('parkingChart').getContext('2d'), {
+  type: 'doughnut',
+  data: { labels: ['Free', 'Occupied'], datasets: [{ data: [0, 0], backgroundColor: ['#69f0ae', '#ff5252'] }] },
+  options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } } }
+});
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tabUpload').classList.toggle('active', tab === 'upload');
+  document.getElementById('tabCamera').classList.toggle('active', tab === 'camera');
+  document.getElementById('panelUpload').style.display = tab === 'upload' ? 'block' : 'none';
+  document.getElementById('panelCamera').style.display = tab === 'camera' ? 'block' : 'none';
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('video/')) uploadFile(file);
+}
+
+function uploadFile(file) {
+  if (!file) return;
+  const zone = document.getElementById('uploadZone');
+  const bar = document.getElementById('progressBar');
+  const fill = document.getElementById('progressFill');
+  const text = document.getElementById('uploadText');
+  text.textContent = `Uploading ${file.name}...`;
+  bar.style.display = 'block';
+  fill.style.width = '0%';
+  const formData = new FormData();
+  formData.append('file', file);
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/upload');
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) fill.style.width = Math.round(e.loaded / e.total * 100) + '%';
+  };
+  xhr.onload = () => {
+    const res = JSON.parse(xhr.responseText);
+    uploadedPath = res.path;
+    zone.classList.add('done');
+    text.textContent = `✅ ${file.name} ready`;
+    fill.style.width = '100%';
+  };
+  xhr.onerror = () => { text.textContent = '❌ Upload failed'; };
+  xhr.send(formData);
+}
+
+function startPipeline() {
+  let source;
+  if (currentTab === 'upload') {
+    if (!uploadedPath) { alert('Please upload a video first!'); return; }
+    source = uploadedPath;
+  } else {
+    source = document.getElementById('cameraSource').value || '0';
+  }
+  fetch(`/start?source=${encodeURIComponent(source)}`, { method: 'POST' })
+    .then(r => r.json()).then(() => {
+      document.getElementById('liveBadge').textContent = '🟢 LIVE';
+      document.getElementById('liveBadge').className = 'live-badge on';
+      document.getElementById('noSignal').style.display = 'none';
+      document.getElementById('videoFeed').style.display = 'block';
+      connectWS();
+      loadViolations();
+      loadCounts();
+    });
+}
+
+function stopPipeline() {
+  fetch('/stop', { method: 'POST' }).then(() => {
+    if (ws) ws.close();
+    document.getElementById('liveBadge').textContent = '⏸ OFFLINE';
+    document.getElementById('liveBadge').className = 'live-badge';
+    document.getElementById('noSignal').style.display = 'flex';
+    document.getElementById('videoFeed').style.display = 'none';
+  });
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/video`);
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    document.getElementById('videoFeed').src = 'data:image/jpeg;base64,' + data.frame;
+    updateStats(data.stats);
+  };
+  ws.onclose = () => {
+    if (document.getElementById('liveBadge').classList.contains('on'))
+      setTimeout(connectWS, 1000);
+  };
+}
+
+function updateStats(stats) {
+  document.getElementById('statCount').textContent = stats.vehicle_count || 0;
+  document.getElementById('statViols').textContent = stats.violations || 0;
+  document.getElementById('statFps').textContent = stats.fps || 0;
+  const p = stats.parking;
+  if (p && p.total > 0) {
+    document.getElementById('statFree').textContent = `${p.free}/${p.total}`;
+    parkingChart.data.datasets[0].data = [p.free, p.occupied];
+    parkingChart.update('none');
+  }
+}
+
+function loadViolations() {
+  fetch('/violations').then(r => r.json()).then(d => {
+    const list = document.getElementById('violationsList');
+    if (!d.violations || !d.violations.length) return;
+    list.innerHTML = d.violations.map(v => `
+      <div class="violation-item">
+        <span class="vbadge ${v.violation_type === 'wrong_way' ? 'wrong' : ''}">${v.violation_type.replace('_',' ')}</span>
+        <span>${v.vehicle_type}</span>
+        <span class="vtime">${new Date(v.timestamp).toLocaleTimeString()}</span>
+      </div>`).join('');
+  });
+}
+
+function loadCounts() {
+  fetch('/counts').then(r => r.json()).then(d => {
+    if (!d.counts) return;
+    const rev = [...d.counts].reverse();
+    countChart.data.labels = rev.map(r => new Date(r.hour).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}));
+    countChart.data.datasets[0].data = rev.map(r => r.count);
+    countChart.update();
+  });
+}
+
+setInterval(() => { loadViolations(); loadCounts(); }, 10000);
+</script>
+</body>
+</html>
